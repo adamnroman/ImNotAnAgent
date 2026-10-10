@@ -1,7 +1,8 @@
-# Ball captcha
+# ImNotAnAgent
 
-Hackathon prototypes of human checks, built as a Cloudflare Worker that runs locally with
-`wrangler dev`. No API keys or paid services are involved.
+Hackathon prototypes of human checks, built as a Cloudflare Worker. It runs locally with
+`wrangler dev` and is deployed at https://imnotanagent.adamnroman.workers.dev. No API keys or
+paid services are involved; it fits Cloudflare's free plan.
 
 - **Follow the ball** (`/`): keep the cursor on a moving ball. The server releases the path a
   leg at a time and scores the cursor trace for human-like lag, overshoot and jitter.
@@ -46,10 +47,11 @@ render a fresh set.
 ## Embedding
 
 ```html
-<script src="http://localhost:8787/embed.js" data-variant="plain"></script>
+<script src="https://imnotanagent.adamnroman.workers.dev/embed.js"></script>
 ```
 
-`data-variant` is `plain`, `dots` or `flicker`. After a pass the page receives a
+By default the visitor chooses between the plain ball and the moving dots. Add
+`data-variant="plain"`, `"dots"` or `"flicker"` to fix one version. After a pass the page receives a
 `ball-captcha:pass` event with a token. A server should POST `{"token": ..., "site": "<page origin>"}`
 to `/api/siteverify` before trusting it; tokens are bound to the site and expire after two minutes.
 
@@ -71,3 +73,12 @@ to `/api/siteverify` before trusting it; tokens are bound to the site and expire
 | `public/` | Pages, widget and embed script |
 | `recaptcha-v3/` | A reCAPTCHA v3 comparison page (needs your own keys in `recaptcha-v3/keys.env`) |
 | `voice-captcha/` | Separate Python prototype: say a phrase, score human versus synthetic voice. It downloads large models (several hundred MB); see `voice-captcha/server.py` |
+
+## Deploying your own copy
+
+```sh
+npx wrangler kv namespace create USED   # put the printed id in wrangler.jsonc
+npm run setup                            # renders the videos and answer key
+openssl rand -hex 32 | npx wrangler secret put CAPTCHA_SECRET
+npx wrangler deploy
+```

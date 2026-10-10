@@ -8,30 +8,61 @@
 <style>
   body { padding: 20px; }
   main { max-width: 340px; margin: 0 auto; }
+  .choice { display: flex; gap: 4px; margin-bottom: 16px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; }
+  .choice button {
+    flex: 1; font: inherit; padding: 6px 10px; border: 0; border-radius: 6px; cursor: pointer;
+    background: transparent; color: var(--muted);
+  }
+  .choice button[aria-pressed="true"] { background: var(--panel); color: var(--text); font-weight: 600; }
 </style>
 </head>
 <body>
-<main id="test"></main>
+<main>
+  <div class="choice" id="choice" role="group" aria-label="Test style" hidden>
+    <button type="button" data-variant="plain">Plain ball</button>
+    <button type="button" data-variant="dots">Moving dots</button>
+  </div>
+  <div id="test"></div>
+</main>
 
 <script src="/bounce-widget.js"></script>
 <script>
-// The single test that embed.js shows inside its frame. ?variant=plain|dots|flicker
+// The single test that embed.js shows inside its frame.
+//   ?variant=choice (default)    the visitor picks the plain ball or the moving dots
+//   ?variant=plain|dots|flicker  that version only
 // On a pass, the token is handed to the page that embedded this frame.
 (() => {
   const params = new URLSearchParams(location.search);
-  const requested = params.get("variant");
-  const variant = ["plain", "dots", "flicker"].includes(requested) ? requested : "plain";
+  const requested = params.get("variant") ?? "choice";
   // The site this frame protects. Where the browser reports the embedding page's real origin,
   // that wins over what the URL claims.
   const site = location.ancestorOrigins?.[0] ?? params.get("site") ?? location.origin;
-  BounceCaptcha.mount(document.getElementById("test"), {
-    variant,
-    site,
-    title: "Quick check before you continue",
-    intro: "Press Play and count how often the ball touches a wall. Turns that stop short of the wall don't count.",
-    // Any site may embed this, so the token goes to whichever page is the parent.
-    onPass: (token) => window.parent.postMessage({ type: "ball-captcha:pass", token }, "*"),
-  });
+  const test = document.getElementById("test");
+
+  function show(variant) {
+    test.replaceChildren();
+    BounceCaptcha.mount(test, {
+      variant,
+      site,
+      title: "Quick check before you continue",
+      intro: "Press Play and count how often the ball touches a wall. Turns that stop short of the wall don't count.",
+      // Any site may embed this, so the token goes to whichever page is the parent.
+      onPass: (token) => {
+        choice.hidden = true;
+        window.parent.postMessage({ type: "ball-captcha:pass", token }, "*");
+      },
+    });
+    for (const b of choice.querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.variant === variant));
+  }
+
+  const choice = document.getElementById("choice");
+  if (requested === "choice") {
+    choice.hidden = false;
+    choice.addEventListener("click", (e) => e.target.dataset.variant && show(e.target.dataset.variant));
+    show("plain");
+  } else {
+    show(["plain", "dots", "flicker"].includes(requested) ? requested : "plain");
+  }
 })();
 </script>
 </body>

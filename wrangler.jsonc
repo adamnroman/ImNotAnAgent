@@ -1,11 +1,11 @@
 {
-  "name": "ball-captcha",
+  "name": "imnotanagent",
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
   "assets": { "directory": "./public" },
-  // Records which sessions have been scored. Before deploying, create the namespace with
-  // `npx wrangler kv namespace create USED` and add the id it prints here.
-  "kv_namespaces": [{ "binding": "USED" }],
+  // Records which challenges have been answered and how often each IP has failed.
+  // `wrangler dev` uses a local copy; the id is the deployed namespace.
+  "kv_namespaces": [{ "binding": "USED", "id": "58448160aae74b4aa57e86406fb227a2" }],
   "vars": {
     // "true" returns answers and raw measurements with each result, for tuning. It hands a bot
     // the answer key, so keep it "false" here; to tune locally, add DEBUG_FEATURES=true to .dev.vars.

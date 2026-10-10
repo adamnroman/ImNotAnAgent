@@ -107,7 +107,7 @@ window.BounceCaptcha = (() => {
     }
 
     const showBlocked = (seconds) =>
-      showOutcome("Too many failed attempts.", false, `Try again in ${Math.ceil(seconds / 60)} minutes.`);
+      showOutcome("Too many failed attempts.", false, `Try again in ${Math.ceil(seconds / 60)} minutes.`, false);
 
     async function newChallenge() {
       parts.play.hidden = true;

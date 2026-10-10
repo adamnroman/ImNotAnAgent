@@ -1,8 +1,9 @@
 // Ball captcha gate. Add to the <head> of any page:
 //
-//   <script src="https://YOUR-WORKER/embed.js" data-variant="plain"></script>
+//   <script src="https://YOUR-WORKER/embed.js"></script>
 //
-// data-variant is "plain" (default), "dots" or "flicker". The page is covered until the
+// data-variant is "choice" (default: the visitor picks the plain ball or the moving dots),
+// or "plain", "dots" or "flicker" for that version only. The page is covered until the
 // visitor passes the test, once per browser session. On a pass:
 //   - document receives a "ball-captcha:pass" event whose detail.token is the pass token
 //   - window.ballCaptchaToken holds the same token
@@ -14,7 +15,7 @@
 (() => {
   const script = document.currentScript;
   const origin = new URL(script.src).origin;
-  const variant = script.dataset.variant || "plain";
+  const variant = script.dataset.variant || "choice";
   const PASSED_KEY = "ball-captcha:passed";
 
   // Storage can be unavailable (private windows, blocked site data); then the test shows every time.
