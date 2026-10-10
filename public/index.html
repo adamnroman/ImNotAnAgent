@@ -153,6 +153,7 @@
     els.hint.textContent = "Starting…";
     try {
       const res = await post("/api/start", {});
+      if (res.status === 429) return stop("Too many failed attempts. Try again in 10 minutes.");
       if (!res.ok) throw new Error();
       const data = await res.json();
       ({ session, chain, durationMs, leadMs } = data);
@@ -203,12 +204,14 @@
     els.hint.textContent = "Scoring…";
     try {
       const res = await post("/api/verify", { session, chain, segments: [...segments, pending] });
+      if (res.status === 429) return stop("Too many failed attempts. Try again in 10 minutes.");
       if (!res.ok) throw new Error();
       const data = await res.json();
       showOutcome(data.passed ? "Passed: likely human" : "Failed: likely a bot", data.passed, [
         ["Human score", data.score + "%"],
         ["Bot probability", data.botProbability + "%"],
         ["Score needed to pass", data.threshold + "%"],
+        ...(data.passed ? [] : [["Attempts left", String(data.attemptsLeft)]]),
       ]);
       if (data.features) {
         const show = (v, digits = 1) => (v === null ? "n/a" : v.toFixed(digits));

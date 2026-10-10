@@ -35,6 +35,9 @@ p { margin: 0; color: var(--muted); }
 .bounce-test button { cursor: pointer; }
 .bounce-test button:disabled, .bounce-test input:disabled { opacity: 0.5; cursor: default; }
 .bounce-test button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.bounce-test .cycle { height: 4px; margin-top: 12px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.bounce-test .cycle-bar { height: 100%; width: 0; background: var(--accent); }
+.bounce-test .cycle-text { min-height: 22px; margin-top: 4px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .bounce-test .outcome { margin-top: 12px; min-height: 52px; }
 .bounce-test .verdict { font-weight: 600; }
 .bounce-test .verdict.pass { color: var(--pass); }

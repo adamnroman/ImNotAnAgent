@@ -10,6 +10,9 @@
 // Both:
 //   POST /api/siteverify     -> for the protected site's backend: check a pass token
 //
+// Pass tokens are bound to the site the test ran for, and siteverify only accepts a token
+// for the site it was issued to. After three failed tests an IP is blocked for ten minutes.
+//
 // In the follow-the-ball test the path is derived from a secret, so the client only ever
 // knows the legs it has been given. Each leg is released shortly before the ball reaches it,
 // and only in exchange for the cursor trace up to that moment, so a script cannot see the
@@ -20,6 +23,7 @@ import { SIZE, RADIUS, DURATION_MS, buildLegs } from "./path.js";
 import { scoreTrace, validateTrace } from "./scoring.js";
 import { json, fail, hmac, seal, open, sha256Hex } from "./tokens.js";
 import { bounceStart, bounceVerify } from "./bounce.js";
+import { blockedResponse, isBlocked, recordFailure } from "./limits.js";
 
 const LEAD_MS = 350; // how early the next leg is released
 const MAX_BEHIND_MS = 700; // a commit must cover the trace up to this close to "now"
@@ -42,8 +46,8 @@ function segmentError(samples, from, to) {
   return null;
 }
 
-async function start(env) {
-  const session = { id: crypto.randomUUID(), startedAt: Date.now() };
+async function start(env, body, { site }) {
+  const session = { id: crypto.randomUUID(), startedAt: Date.now(), site };
   const legs = await legsFor(env, session);
   return json({
     session: await seal(env, "session", session),
@@ -93,7 +97,7 @@ async function nextLeg(env, body) {
   });
 }
 
-async function verify(env, body) {
+async function verify(env, body, { ip }) {
   const loaded = await loadSession(env, body);
   if (!loaded) return fail(400, "invalid session");
   const { session, chain, legs, elapsed } = loaded;
@@ -128,9 +132,12 @@ async function verify(env, body) {
   if (result.passed) {
     response.token = await seal(env, "pass", {
       id: session.id,
+      site: session.site,
       score: result.score,
       expiresAt: Date.now() + PASS_TOKEN_TTL_MS,
     });
+  } else {
+    response.attemptsLeft = await recordFailure(env, ip);
   }
   // Measurements help tune the thresholds, and help an attacker tune a bot. Off in production.
   if (env.DEBUG_FEATURES === "true") {
@@ -140,11 +147,27 @@ async function verify(env, body) {
   return json(response);
 }
 
+// body: { token, site } where site is the origin of the page that ran the test, e.g. "https://example.com".
 async function siteVerify(env, body) {
   const pass = await open(env, "pass", body.token);
-  if (!pass || pass.expiresAt < Date.now()) return json({ success: false });
-  return json({ success: true, score: pass.score, id: pass.id });
+  if (!pass || pass.expiresAt < Date.now()) return json({ success: false, error: "invalid or expired token" });
+  if (pass.site !== body.site) return json({ success: false, error: "token was issued for a different site" });
+  return json({ success: true, score: pass.score, id: pass.id, site: pass.site });
 }
+
+// The origin a test is run for: the embedding site if the page says so, else the caller's origin.
+function siteFor(body, request, url) {
+  if (typeof body.site === "string") {
+    try {
+      const origin = new URL(body.site).origin;
+      if (origin === body.site) return origin;
+    } catch {}
+  }
+  return request.headers.get("origin") ?? url.origin;
+}
+
+// Starting or answering a test is refused while the caller's IP is blocked.
+const LIMITED = new Set(["/api/start", "/api/verify", "/api/bounce/start", "/api/bounce/verify"]);
 
 const routes = {
   "POST /api/start": start,
@@ -173,6 +196,9 @@ export default {
       }
     }
     if (body === null || typeof body !== "object") return fail(400, "body is not an object");
-    return handler(env, body);
+
+    const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+    if (LIMITED.has(url.pathname) && (await isBlocked(env, ip))) return json(blockedResponse, 429);
+    return handler(env, body, { ip, site: siteFor(body, request, url) });
   },
 };

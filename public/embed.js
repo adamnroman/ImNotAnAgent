@@ -8,8 +8,9 @@
 //   - window.ballCaptchaToken holds the same token
 //
 // This only covers the page in the browser. To actually keep bots out, send the token to
-// your server and have it POST {"token": ...} to https://YOUR-WORKER/api/siteverify before
-// it returns anything worth protecting. Tokens expire two minutes after the pass.
+// your server and have it POST {"token": ..., "site": "https://your-site.example"} to
+// https://YOUR-WORKER/api/siteverify before it returns anything worth protecting. The token
+// is only accepted for the site it was issued on, and expires two minutes after the pass.
 (() => {
   const script = document.currentScript;
   const origin = new URL(script.src).origin;
@@ -30,7 +31,7 @@
   cover.style.cssText =
     "position:fixed;inset:0;z-index:2147483647;background:#151514;display:flex;align-items:center;justify-content:center;";
   const frame = document.createElement("iframe");
-  frame.src = `${origin}/widget?variant=${encodeURIComponent(variant)}`;
+  frame.src = `${origin}/widget?variant=${encodeURIComponent(variant)}&site=${encodeURIComponent(location.origin)}`;
   frame.title = "Human check";
   frame.style.cssText = "border:0;width:min(380px,100vw);height:min(640px,100vh);border-radius:12px;";
   cover.append(frame);

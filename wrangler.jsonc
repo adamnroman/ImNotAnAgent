@@ -7,7 +7,8 @@
   // `npx wrangler kv namespace create USED` and add the id it prints here.
   "kv_namespaces": [{ "binding": "USED" }],
   "vars": {
-    // Returns the raw measurements with each score, for tuning. Set to "false" in production.
-    "DEBUG_FEATURES": "true"
+    // "true" returns answers and raw measurements with each result, for tuning. It hands a bot
+    // the answer key, so keep it "false" here; to tune locally, add DEBUG_FEATURES=true to .dev.vars.
+    "DEBUG_FEATURES": "false"
   }
 }
