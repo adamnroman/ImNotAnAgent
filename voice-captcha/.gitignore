@@ -1,0 +1,5 @@
+.venv/
+samples/
+models/
+__pycache__/
+*.log

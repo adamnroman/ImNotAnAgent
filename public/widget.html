@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Are you human?</title>
+<link rel="stylesheet" href="/bounce.css">
+<style>
+  body { padding: 20px; }
+  main { max-width: 340px; margin: 0 auto; }
+</style>
+</head>
+<body>
+<main id="test"></main>
+
+<script src="/bounce-widget.js"></script>
+<script>
+// The single test that embed.js shows inside its frame. ?variant=plain|dots|flicker
+// On a pass, the token is handed to the page that embedded this frame.
+(() => {
+  const requested = new URLSearchParams(location.search).get("variant");
+  const variant = ["plain", "dots", "flicker"].includes(requested) ? requested : "plain";
+  BounceCaptcha.mount(document.getElementById("test"), {
+    variant,
+    title: "Quick check before you continue",
+    intro: "Press Play and count how often the ball touches a wall. Turns that stop short of the wall don't count.",
+    // Any site may embed this, so the token goes to whichever page is the parent.
+    onPass: (token) => window.parent.postMessage({ type: "ball-captcha:pass", token }, "*"),
+  });
+})();
+</script>
+</body>
+</html>

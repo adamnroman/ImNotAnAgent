@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Follow the ball</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --line: #d9d9d4; --text: #1c1c1a; --muted: #6b6b66;
+    --ball: #2f6fed; --ball-on: #1f9d55; --pass: #1f9d55; --fail: #d64545;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1e1e1c; --line: #3a3a36; --text: #ededea; --muted: #9a9a94;
+      --ball: #6b9bff; --ball-on: #4cc38a; --pass: #4cc38a; --fail: #ff7b7b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+    background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif;
+  }
+  main { width: min(360px, 100%); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { margin: 0; color: var(--muted); }
+  canvas {
+    display: block; width: 100%; aspect-ratio: 1; margin-top: 16px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    touch-action: none; cursor: crosshair;
+  }
+  .bar { height: 4px; margin-top: 8px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--ball); }
+  .result { margin-top: 16px; min-height: 140px; }
+  .verdict { font-size: 18px; font-weight: 600; }
+  .verdict.pass { color: var(--pass); }
+  .verdict.fail { color: var(--fail); }
+  dl { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; margin: 8px 0 12px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+  details { margin-bottom: 12px; color: var(--muted); }
+  details dl { font-size: 13px; }
+  button {
+    font: inherit; padding: 8px 14px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Follow the ball</h1>
+  <p id="hint"></p>
+
+  <canvas id="stage"></canvas>
+  <div class="bar"><div id="progress"></div></div>
+
+  <div class="result">
+    <div id="summary" hidden>
+      <div id="verdict" class="verdict"></div>
+      <dl id="scores"></dl>
+      <details id="debug" hidden>
+        <summary>Measurements</summary>
+        <dl id="measurements"></dl>
+      </details>
+      <button id="retry" type="button">Try again</button>
+    </div>
+  </div>
+</main>
+
+<script>
+// Everything lives inside this function so the page exposes no variables to other scripts.
+// The server decides the path and the score; this code only draws the ball and records the cursor.
+(() => {
+  const SIZE = 360;
+  const RADIUS = 24;
+  const IDLE_HINT = "Put your cursor on the ball to start, then keep it there.";
+
+  const canvas = document.getElementById("stage");
+  const ctx = canvas.getContext("2d");
+  const els = Object.fromEntries(
+    ["hint", "progress", "summary", "verdict", "scores", "debug", "measurements", "retry"]
+      .map((id) => [id, document.getElementById(id)])
+  );
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.height = SIZE * dpr;
+  ctx.scale(dpr, dpr);
+
+  let state = "idle";       // idle -> starting -> running -> scoring -> done
+  let pointer = null;       // last known cursor position in logical coords
+  let ball, session, chain, legs, haveLastLeg, fetchingLeg, durationMs, leadMs;
+  let startedAt;            // performance.now() when the ball started moving
+  let pending, segments;    // samples not yet committed; samples committed with each leg
+  let lastSampleAt;
+
+  const round1 = (v) => Math.round(v * 10) / 10;
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const post = (path, body) =>
+    fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+  const onBall = () =>
+    pointer !== null && Math.hypot(pointer.x - ball.x, pointer.y - ball.y) <= RADIUS;
+
+  function ballAt(elapsed) {
+    const leg = legs.find((l) => elapsed <= l.t1) ?? legs.at(-1);
+    const f = Math.max(0, Math.min(1, (elapsed - leg.t0) / (leg.t1 - leg.t0)));
+    return { x: leg.x0 + (leg.x1 - leg.x0) * f, y: leg.y0 + (leg.y1 - leg.y0) * f };
+  }
+
+  function draw() {
+    const css = getComputedStyle(document.documentElement);
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.fillStyle = css.getPropertyValue(state === "running" && onBall() ? "--ball-on" : "--ball");
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function reset() {
+    state = "idle";
+    ball = { x: SIZE / 2, y: SIZE / 2 };
+    els.summary.hidden = true;
+    els.progress.style.width = "0";
+    els.hint.textContent = IDLE_HINT;
+  }
+
+  function showRows(list, rows) {
+    list.replaceChildren(
+      ...rows.flatMap(([label, value]) => {
+        const dt = document.createElement("dt");
+        const dd = document.createElement("dd");
+        dt.textContent = label;
+        dd.textContent = value;
+        return [dt, dd];
+      })
+    );
+  }
+
+  function showOutcome(text, passed, rows = []) {
+    state = "done";
+    els.verdict.textContent = text;
+    els.verdict.className = "verdict " + (passed ? "pass" : "fail");
+    showRows(els.scores, rows);
+    els.debug.hidden = true;
+    els.summary.hidden = false;
+    els.hint.textContent = "Test complete.";
+  }
+
+  const stop = (message) => showOutcome(message, false);
+
+  async function begin() {
+    state = "starting";
+    els.hint.textContent = "Starting…";
+    try {
+      const res = await post("/api/start", {});
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      ({ session, chain, durationMs, leadMs } = data);
+      legs = [data.leg];
+      haveLastLeg = data.last;
+      fetchingLeg = false;
+      startedAt = performance.now();
+      pending = [[0, round1(pointer.x), round1(pointer.y)]];
+      segments = [];
+      lastSampleAt = 0;
+      state = "running";
+      els.hint.textContent = "Keep your cursor on the ball.";
+    } catch {
+      stop("Could not reach the server.");
+    }
+  }
+
+  // Trade the trace recorded so far for the next leg of the path.
+  async function fetchNextLeg() {
+    fetchingLeg = true;
+    try {
+      while (state === "running") {
+        const upTo = round1(performance.now() - startedAt);
+        lastSampleAt = Math.max(lastSampleAt, upTo);
+        const samples = pending.slice();
+        const res = await post("/api/leg", { session, chain, upTo, samples });
+        if (res.status === 425) {
+          await sleep(((await res.json()).retryInMs ?? 20) + 10);
+          continue;
+        }
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        pending = pending.slice(samples.length);
+        segments.push(samples);
+        chain = data.chain;
+        legs.push(data.leg);
+        haveLastLeg = data.last;
+        break;
+      }
+    } catch {
+      if (state === "running") stop("Lost contact with the server.");
+    }
+    fetchingLeg = false;
+  }
+
+  async function finish() {
+    state = "scoring";
+    els.hint.textContent = "Scoring…";
+    try {
+      const res = await post("/api/verify", { session, chain, segments: [...segments, pending] });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      showOutcome(data.passed ? "Passed: likely human" : "Failed: likely a bot", data.passed, [
+        ["Human score", data.score + "%"],
+        ["Bot probability", data.botProbability + "%"],
+        ["Score needed to pass", data.threshold + "%"],
+      ]);
+      if (data.features) {
+        const show = (v, digits = 1) => (v === null ? "n/a" : v.toFixed(digits));
+        const f = data.features;
+        showRows(els.measurements, [
+          ["Accuracy (time on the ball)", show(f.accuracy * 100, 0) + "%"],
+          ["Typical distance from centre", show(f.centreDistancePx) + " px"],
+          ["Lag behind the ball", show(f.lagMs) + " ms"],
+          ["Lag variation between legs", show(f.lagSpreadMs) + " ms"],
+          ["Turns with an overshoot", show(f.overshootRate === null ? null : f.overshootRate * 100, 0) + "%"],
+          ["Typical overshoot", show(f.overshootMedianPx) + " px"],
+          ["Jitter", show(f.jitterPx) + " px"],
+          ["Jitter smoothness", show(f.jitterSmoothness, 2)],
+          ["Pointer events", String(f.events)],
+          ...Object.entries(data.signals).map(([name, s]) => ["Suspicion: " + name, show(s * 100, 0) + "%"]),
+        ]);
+        els.debug.hidden = false;
+      }
+    } catch {
+      stop("Could not get a score from the server.");
+    }
+  }
+
+  function frame() {
+    if (state === "idle" && onBall()) begin();
+
+    if (state === "running") {
+      const elapsed = Math.min(performance.now() - startedAt, durationMs);
+      const newest = legs.at(-1);
+      if (!haveLastLeg && !fetchingLeg && elapsed >= newest.t1 - leadMs) fetchNextLeg();
+      ball = ballAt(elapsed);
+      els.progress.style.width = (elapsed / durationMs) * 100 + "%";
+
+      if (!haveLastLeg && elapsed > newest.t1) stop("The connection is too slow for this test.");
+      else if (elapsed >= durationMs) finish();
+    }
+
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  function track(e) {
+    if (!e.isTrusted) return; // ignore events made by scripts
+    const rect = canvas.getBoundingClientRect();
+    pointer = {
+      x: ((e.clientX - rect.left) / rect.width) * SIZE,
+      y: ((e.clientY - rect.top) / rect.height) * SIZE,
+    };
+    if (state !== "running") return;
+    const at = Math.min(e.timeStamp, performance.now()) - startedAt;
+    lastSampleAt = Math.max(lastSampleAt, round1(at));
+    if (lastSampleAt <= durationMs) pending.push([lastSampleAt, round1(pointer.x), round1(pointer.y)]);
+  }
+  window.addEventListener("pointermove", track);
+  window.addEventListener("pointerdown", track);
+  els.retry.addEventListener("click", reset);
+
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

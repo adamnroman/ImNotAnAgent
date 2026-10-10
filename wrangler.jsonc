@@ -1,0 +1,13 @@
+{
+  "name": "ball-captcha",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./public" },
+  // Records which sessions have been scored. Before deploying, create the namespace with
+  // `npx wrangler kv namespace create USED` and add the id it prints here.
+  "kv_namespaces": [{ "binding": "USED" }],
+  "vars": {
+    // Returns the raw measurements with each score, for tuning. Set to "false" in production.
+    "DEBUG_FEATURES": "true"
+  }
+}

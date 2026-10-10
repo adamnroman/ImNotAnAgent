@@ -1,0 +1,42 @@
+/* Shared by bounce.html (all three versions) and widget.html (the embeddable single test). */
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --line: #d9d9d4; --text: #1c1c1a; --muted: #6b6b66;
+  --accent: #2f6fed; --pass: #1f9d55; --fail: #d64545;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151514; --panel: #1e1e1c; --line: #3a3a36; --text: #ededea; --muted: #9a9a94;
+    --accent: #6b9bff; --pass: #4cc38a; --fail: #ff7b7b;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 0; }
+p { margin: 0; color: var(--muted); }
+
+.bounce-test .prompt { min-height: 68px; margin-top: 4px; }
+.bounce-test .swatch {
+  display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+  vertical-align: -2px; margin-right: 4px;
+}
+.bounce-test .stage {
+  position: relative; margin-top: 8px; aspect-ratio: 1;
+  background: #1e1e1c; border-radius: 8px; overflow: hidden;
+}
+.bounce-test .stage img { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.bounce-test .play { position: absolute; inset: 0; margin: auto; width: fit-content; height: fit-content; }
+.bounce-test form { display: flex; gap: 8px; margin-top: 12px; }
+.bounce-test input, .bounce-test button {
+  font: inherit; padding: 8px 12px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text);
+}
+.bounce-test input { flex: 1; min-width: 0; }
+.bounce-test button { cursor: pointer; }
+.bounce-test button:disabled, .bounce-test input:disabled { opacity: 0.5; cursor: default; }
+.bounce-test button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.bounce-test .outcome { margin-top: 12px; min-height: 52px; }
+.bounce-test .verdict { font-weight: 600; }
+.bounce-test .verdict.pass { color: var(--pass); }
+.bounce-test .verdict.fail { color: var(--fail); }
+[hidden] { display: none !important; }

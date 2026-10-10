@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.dev.vars
+recaptcha-v3/keys.env
+recaptcha-v3/server.log
+
+.claude/settings.local.json

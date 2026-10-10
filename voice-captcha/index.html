@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Say the phrase</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --line: #d9d9d4; --text: #1c1c1a; --muted: #6b6b66;
+    --accent: #2f6fed; --pass: #1f9d55; --fail: #d64545;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1e1e1c; --line: #3a3a36; --text: #ededea; --muted: #9a9a94;
+      --accent: #6b9bff; --pass: #4cc38a; --fail: #ff7b7b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+    background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif;
+  }
+  main { width: min(360px, 100%); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { margin: 0; color: var(--muted); }
+  .phrase {
+    margin: 16px 0; padding: 20px 16px; min-height: 92px; display: grid; place-items: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    font-size: 20px; font-weight: 600; text-align: center;
+  }
+  .bar { height: 4px; margin: 12px 0 16px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); }
+  button {
+    font: inherit; padding: 8px 14px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .verdict { font-size: 18px; font-weight: 600; }
+  .verdict.pass { color: var(--pass); }
+  .verdict.fail { color: var(--fail); }
+  dl { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; margin: 8px 0 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+  .result { min-height: 170px; }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Say the phrase</h1>
+  <p id="hint">Press record and read the phrase aloud.</p>
+
+  <div class="phrase" id="phrase">…</div>
+  <button id="record" type="button" disabled>Record</button>
+  <div class="bar"><div id="progress"></div></div>
+
+  <div class="result">
+    <div id="verdict" class="verdict"></div>
+    <dl id="details"></dl>
+  </div>
+</main>
+
+<script>
+(() => {
+  const RECORD_MS = 5000;
+  const els = Object.fromEntries(
+    ["hint", "phrase", "record", "progress", "verdict", "details"].map((id) => [id, document.getElementById(id)])
+  );
+  let token = null;
+
+  function showRows(rows) {
+    els.details.replaceChildren(
+      ...rows.flatMap(([label, value]) => {
+        const dt = document.createElement("dt");
+        const dd = document.createElement("dd");
+        dt.textContent = label;
+        dd.textContent = value;
+        return [dt, dd];
+      })
+    );
+  }
+
+  function showVerdict(text, passed) {
+    els.verdict.textContent = text;
+    els.verdict.className = "verdict " + (passed ? "pass" : "fail");
+  }
+
+  async function newChallenge() {
+    els.record.disabled = true;
+    try {
+      const data = await (await fetch("/api/challenge", { method: "POST" })).json();
+      token = data.token;
+      els.phrase.textContent = data.phrase;
+      els.hint.textContent = "Press record and read the phrase aloud.";
+      els.record.disabled = false;
+    } catch {
+      els.hint.textContent = "Could not reach the server.";
+    }
+  }
+
+  async function record() {
+    els.record.disabled = true;
+    els.verdict.textContent = "";
+    showRows([]);
+    let stream;
+    try {
+      // Browser clean-up filters change the sound of a voice, so ask for the raw microphone.
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+    } catch {
+      els.hint.textContent = "Microphone access is needed for this test.";
+      els.record.disabled = false;
+      return;
+    }
+
+    const recorder = new MediaRecorder(stream);
+    const chunks = [];
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    const stopped = new Promise((resolve) => (recorder.onstop = resolve));
+    recorder.start();
+    els.hint.textContent = "Recording… read the phrase now.";
+
+    const startedAt = performance.now();
+    const tick = setInterval(() => {
+      els.progress.style.width = Math.min(100, ((performance.now() - startedAt) / RECORD_MS) * 100) + "%";
+    }, 50);
+    setTimeout(() => recorder.stop(), RECORD_MS);
+    await stopped;
+    clearInterval(tick);
+    stream.getTracks().forEach((track) => track.stop());
+    els.progress.style.width = "0";
+    els.hint.textContent = "Checking…";
+
+    const form = new FormData();
+    form.append("token", token);
+    form.append("audio", new Blob(chunks, { type: recorder.mimeType }), "recording");
+    try {
+      const res = await fetch("/api/verify", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) {
+        showVerdict(data.detail ?? "The recording was rejected.", false);
+      } else {
+        const reason = !data.phraseOk ? "wrong phrase" : "voice sounds synthetic";
+        showVerdict(data.passed ? "Passed: likely human" : "Failed: " + reason, data.passed);
+        showRows([
+          ["Heard", data.heard || "(nothing)"],
+          ["Phrase match", Math.round(data.phraseMatch * 100) + "%"],
+          ["Synthetic voice probability", Math.round(data.syntheticProbability * 100) + "%"],
+          ["Fails at or above", Math.round(data.syntheticThreshold * 100) + "%"],
+          ...Object.entries(data.detectors).map(([name, p]) => ["Detector: " + name, Math.round(p * 100) + "%"]),
+        ]);
+      }
+    } catch {
+      showVerdict("Could not get a result from the server.", false);
+    }
+    newChallenge(); // each phrase can be used once
+  }
+
+  els.record.addEventListener("click", record);
+  newChallenge();
+})();
+</script>
+</body>
+</html>
