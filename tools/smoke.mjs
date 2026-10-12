@@ -10,8 +10,9 @@ const BASE = process.argv[2] ?? "http://127.0.0.1:8787";
 const pool = JSON.parse(readFileSync(new URL("../src/bounce-pool.json", import.meta.url)));
 const env = { CAPTCHA_SECRET: readFileSync(new URL("../.dev.vars", import.meta.url), "utf8").match(/^CAPTCHA_SECRET=(.*)$/m)[1] };
 const answerFor = async (challenge) => {
-  const { video } = await decrypt(env, "bounce", challenge);
-  return Object.values(pool.videos).flat().find((v) => v.id === video).bounces;
+  const { video, colour } = await decrypt(env, "bounce", challenge);
+  const found = Object.values(pool.videos).flat().find((v) => v.id === video);
+  return (found.answers?.[colour] ?? found).bounces;
 };
 const ids = Object.values(pool.videos).flat().map((v) => v.id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

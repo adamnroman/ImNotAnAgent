@@ -40,6 +40,11 @@ The page is never told which video it was given: the challenge token is encrypte
 video is loaded from a URL made of that token rather than from its file name. The video's
 bytes still identify it, though, so the set should be re-rendered regularly.
 
+In the colour-flicker version the page has to be told which colour to follow. That colour is
+drawn for each challenge, separately from the video, and every colour has the same set of
+answers across the videos, so it gives away neither the video nor the count. A set rendered
+before this was the case has to be re-rendered (`npm run build:pool`).
+
 ## Other commands
 
 - `npm test`: scoring tests for follow the ball (simulated cursors), and tests that the bounce

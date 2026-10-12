@@ -220,19 +220,24 @@ function renderDots(motion, radius, rand) {
 
 const firstUint32 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset).getUint32(0);
 
-// Plans one video. randomBytes(n) must return n fresh random bytes. Returns the answer
-// (and, for flicker, which colour the question is about) plus a function that renders the GIF.
+export const FLICKER_COLOURS = FLICKER_BALLS.map((b) => b.name);
+
+// Plans one video. randomBytes(n) must return n fresh random bytes. Returns the answer plus a
+// function that renders the GIF. A flicker video can be asked about any of its balls, so its
+// answer is { answers: { <colour>: { bounces, feints, swatch } } }, one entry per ball.
 export function plan(name, randomBytes) {
   const variant = VARIANTS[name];
   const motions = Array.from({ length: variant.balls }, () => simulate(randomBytes(4), variant));
   const rand = mulberry32(firstUint32(randomBytes(4)));
-  const target = Math.floor(rand() * variant.balls); // which ball the question is about
-  const { bounces, feints } = motions[target];
-  const answer = { bounces, feints };
-  if (name === "flicker") {
-    answer.colour = FLICKER_BALLS[target].name;
-    answer.swatch = `rgb(${FLICKER_BALLS[target].blend.join(", ")})`;
-  }
+  const count = ({ bounces, feints }) => ({ bounces, feints });
+  const answer =
+    name === "flicker"
+      ? {
+          answers: Object.fromEntries(
+            FLICKER_BALLS.map((b, k) => [b.name, { ...count(motions[k]), swatch: `rgb(${b.blend.join(", ")})` }]),
+          ),
+        }
+      : count(motions[0]);
 
   const render = () => {
     if (name === "dots") return renderDots(motions[0], variant.radius, rand);
