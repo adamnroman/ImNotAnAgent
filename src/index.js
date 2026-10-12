@@ -5,7 +5,8 @@
 //   POST /api/leg            -> commit the cursor trace so far, receive the next leg
 //   POST /api/verify         -> submit the rest of the trace, receive the score and a pass token
 // Count-the-bounces test (public/bounce.html, and public/embed.js for other sites): see bounce.js
-//   POST /api/bounce/start   -> a signed challenge and the URL of its pre-rendered video
+//   POST /api/bounce/start   -> an encrypted challenge and the URL of its pre-rendered video
+//   GET  /api/bounce/video/* -> that video
 //   POST /api/bounce/verify  -> check the answer, receive a pass token
 // Both:
 //   POST /api/siteverify     -> for the protected site's backend: check a pass token
@@ -22,7 +23,7 @@
 import { SIZE, RADIUS, DURATION_MS, buildLegs } from "./path.js";
 import { scoreTrace, validateTrace } from "./scoring.js";
 import { json, fail, hmac, seal, open, sha256Hex } from "./tokens.js";
-import { bounceStart, bounceVerify } from "./bounce.js";
+import { bounceStart, bounceVerify, bounceVideo } from "./bounce.js";
 import { blockedResponse, isBlocked, recordFailure } from "./limits.js";
 
 const LEAD_MS = 350; // how early the next leg is released
@@ -181,6 +182,8 @@ const routes = {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const video = request.method === "GET" && url.pathname.match(/^\/api\/bounce\/video\/([\w-]+)\.gif$/);
+    if (video) return env.CAPTCHA_SECRET ? bounceVideo(env, request, video[1]) : fail(500, "CAPTCHA_SECRET is not set");
     const handler = routes[`${request.method} ${url.pathname}`];
     if (!handler) return fail(404, "not found");
     if (!env.CAPTCHA_SECRET) return fail(500, "CAPTCHA_SECRET is not set");

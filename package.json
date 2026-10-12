@@ -7,6 +7,7 @@
     "predev": "node tools/setup.mjs",
     "dev": "wrangler dev --port 8787",
     "deploy": "wrangler deploy",
+    "pretest": "node tools/setup.mjs",
     "test": "node --test",
     "build:pool": "node tools/build-bounce-pool.mjs",
     "smoke": "node tools/smoke.mjs"
