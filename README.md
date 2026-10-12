@@ -36,11 +36,17 @@ The first `npm run dev` also runs `npm run setup`, which:
 Neither is committed, since the answer key would let anyone pass. Run `npm run build:pool` to
 render a fresh set.
 
+The page is never told which video it was given: the challenge token is encrypted, and the
+video is loaded from a URL made of that token rather than from its file name. The video's
+bytes still identify it, though, so the set should be re-rendered regularly.
+
 ## Other commands
 
-- `npm test`: scoring tests for follow the ball, using simulated cursors.
+- `npm test`: scoring tests for follow the ball (simulated cursors), and tests that the bounce
+  challenge and its encrypted token give nothing away. Runs `npm run setup` first.
 - `npm run smoke`: end-to-end checks against the running dev server (pass with human-like
-  input, failure with agent-like input, site binding, and the per-IP block).
+  input, failure with agent-like input, site binding, the per-IP block, and the video being
+  served only through its challenge).
 - To see answers and raw measurements after each attempt while tuning, add
   `DEBUG_FEATURES=true` to `.dev.vars` and restart.
 
@@ -68,7 +74,7 @@ to `/api/siteverify` before trusting it; tokens are bound to the site and expire
 | `src/index.js` | Worker routes and the follow-the-ball protocol |
 | `src/scoring.js`, `src/path.js` | Follow-the-ball path and trace scoring |
 | `src/bounce.js`, `src/behaviour.js` | Bounce challenges and input-behaviour scoring |
-| `src/limits.js`, `src/tokens.js` | Per-IP failure limit, signed tokens |
+| `src/limits.js`, `src/tokens.js` | Per-IP failure limit, signed and encrypted tokens |
 | `tools/` | Video renderer, setup and smoke-test scripts |
 | `public/` | Pages, widget and embed script |
 | `recaptcha-v3/` | A reCAPTCHA v3 comparison page (needs your own keys in `recaptcha-v3/keys.env`) |
@@ -82,3 +88,7 @@ npm run setup                            # renders the videos and answer key
 openssl rand -hex 32 | npx wrangler secret put CAPTCHA_SECRET
 npx wrangler deploy
 ```
+
+## License
+
+MIT; see [LICENSE](LICENSE).

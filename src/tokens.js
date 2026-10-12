@@ -1,4 +1,4 @@
-// Shared helpers: JSON responses and HMAC-signed tokens.
+// Shared helpers: JSON responses, HMAC-signed tokens and encrypted tokens.
 
 const encoder = new TextEncoder();
 
@@ -44,9 +44,46 @@ async function open(env, kind, token) {
   }
 }
 
+// Encryption key, derived from the secret separately from the signing key.
+const aesKey = async (env) =>
+  crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(), info: encoder.encode("ball-captcha token encryption") },
+    await crypto.subtle.importKey("raw", encoder.encode(env.CAPTCHA_SECRET), "HKDF", false, ["deriveKey"]),
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+
+// Encrypted tokens are base64url(IV + AES-GCM ciphertext): the holder can neither read nor
+// alter the payload. `kind` is authenticated, so one token type cannot be used as another.
+async function encrypt(env, kind, payload) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const sealed = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: encoder.encode(kind) },
+    await aesKey(env),
+    encoder.encode(JSON.stringify(payload)),
+  );
+  return toBase64Url(new Uint8Array([...iv, ...new Uint8Array(sealed)]));
+}
+
+async function decrypt(env, kind, token) {
+  if (typeof token !== "string") return null;
+  try {
+    const bytes = fromBase64Url(token);
+    const plain = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: bytes.slice(0, 12), additionalData: encoder.encode(kind) },
+      await aesKey(env),
+      bytes.slice(12),
+    );
+    return JSON.parse(new TextDecoder().decode(plain));
+  } catch {
+    return null;
+  }
+}
+
 async function sha256Hex(text) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(text)));
   return [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export { json, fail, hmac, seal, open, sha256Hex };
+export { json, fail, hmac, seal, open, encrypt, decrypt, sha256Hex };

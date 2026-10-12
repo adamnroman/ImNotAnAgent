@@ -5,9 +5,13 @@
 // The videos are rendered ahead of time by `npm run build:pool` (see tools/). The GIFs are
 // static files with random names; their answers are in bounce-pool.json, which is bundled
 // into the Worker and never served. Each challenge picks one video at random.
+//
+// Which video a challenge uses is never readable outside the Worker: the challenge token is
+// encrypted, and the page loads the video from a URL made of that token (bounceVideo), not
+// from the file's name. Otherwise the answers could be learnt once and replayed per video.
 
-import pool from "./bounce-pool.json";
-import { json, fail, seal, open } from "./tokens.js";
+import pool from "./bounce-pool.json" with { type: "json" };
+import { json, fail, seal, encrypt, decrypt } from "./tokens.js";
 import { scoreBehaviour, validateBehaviour } from "./behaviour.js";
 import { recordFailure } from "./limits.js";
 
@@ -26,7 +30,7 @@ export async function bounceStart(env, body, { site }) {
   const videos = pool.videos[variant];
   const video = videos[crypto.getRandomValues(new Uint32Array(1))[0] % videos.length];
 
-  const challenge = await seal(env, "bounce", {
+  const challenge = await encrypt(env, "bounce", {
     id: crypto.randomUUID(),
     issuedAt: Date.now(),
     variant,
@@ -35,7 +39,7 @@ export async function bounceStart(env, body, { site }) {
   });
   return json({
     challenge,
-    video: `/bounce-videos/${video.id}.gif`,
+    video: `/api/bounce/video/${challenge}.gif`,
     playMs: pool.playMs,
     expiresInMs: CHALLENGE_TTL_MS,
     prompt: PROMPTS[variant],
@@ -44,11 +48,28 @@ export async function bounceStart(env, body, { site }) {
   });
 }
 
-export async function bounceVerify(env, body, { ip }) {
-  const challenge = await open(env, "bounce", body.challenge);
+// The challenge and its video, or null if the token is not ours or has run out.
+async function loadChallenge(env, token) {
+  const challenge = await decrypt(env, "bounce", token);
   const video = challenge && pool.videos[challenge.variant]?.find((v) => v.id === challenge.video);
   const age = challenge ? Date.now() - challenge.issuedAt : 0;
-  if (!video || age > CHALLENGE_TTL_MS) return fail(400, "challenge expired or invalid");
+  return video && age <= CHALLENGE_TTL_MS ? { challenge, video, age } : null;
+}
+
+// GET /api/bounce/video/<challenge>.gif: the video for a challenge, while the challenge lasts.
+// The file's validators (ETag, Last-Modified) are left out; they would identify the video.
+export async function bounceVideo(env, request, token) {
+  const loaded = await loadChallenge(env, token);
+  if (!loaded) return fail(404, "not found");
+  const file = await env.ASSETS.fetch(new URL(`/bounce-videos/${loaded.video.id}.gif`, request.url));
+  if (!file.ok) return fail(404, "not found");
+  return new Response(file.body, { headers: { "content-type": "image/gif", "cache-control": "no-store" } });
+}
+
+export async function bounceVerify(env, body, { ip }) {
+  const loaded = await loadChallenge(env, body.challenge);
+  if (!loaded) return fail(400, "challenge expired or invalid");
+  const { challenge, video, age } = loaded;
   if (!Number.isInteger(body.answer)) return fail(400, "answer must be a whole number");
   if (age < MIN_ANSWER_MS) return fail(400, "answered before the video could have finished");
   const behaviourError = validateBehaviour(body.behaviour);

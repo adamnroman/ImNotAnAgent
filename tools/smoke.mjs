@@ -1,13 +1,19 @@
 // End-to-end checks against a local `wrangler dev`: `node tools/smoke.mjs [base-url]`.
-// Reads the answers from src/bounce-pool.json, so it only works where the source is.
+// Reads the answers from src/bounce-pool.json and decrypts challenges with the secret in
+// .dev.vars, so it only works where the source is.
 // Each check uses its own made-up client IP, which wrangler dev passes through.
 
 import { readFileSync } from "node:fs";
+import { decrypt } from "../src/tokens.js";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:8787";
 const pool = JSON.parse(readFileSync(new URL("../src/bounce-pool.json", import.meta.url)));
-const answerFor = (video) =>
-  Object.values(pool.videos).flat().find((v) => video.endsWith(`/${v.id}.gif`)).bounces;
+const env = { CAPTCHA_SECRET: readFileSync(new URL("../.dev.vars", import.meta.url), "utf8").match(/^CAPTCHA_SECRET=(.*)$/m)[1] };
+const answerFor = async (challenge) => {
+  const { video } = await decrypt(env, "bounce", challenge);
+  return Object.values(pool.videos).flat().find((v) => v.id === video).bounces;
+};
+const ids = Object.values(pool.videos).flat().map((v) => v.id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function post(path, body, ip) {
@@ -39,7 +45,7 @@ async function attempt(ip, { site, answer, behaviour }) {
   const start = await post("/api/bounce/start", { variant: "plain", site }, ip);
   if (start.status !== 200) return { start: start.status, ...start.data };
   await sleep(6100);
-  const right = answerFor(start.data.video);
+  const right = await answerFor(start.data.challenge);
   const given = answer === "wrong" ? right + 1 : right;
   const verify = await post("/api/bounce/verify", {
     challenge: start.data.challenge,
@@ -73,6 +79,20 @@ const results = await Promise.all([
     };
   })(),
 ]);
+
+// The video plays from its challenge URL, not from its file name, and nothing sent names the file.
+const started = await post("/api/bounce/start", { variant: "plain", site }, "10.1.0.5");
+const viaChallenge = await fetch(BASE + started.data.video);
+const { video: id } = await decrypt(env, "bounce", started.data.challenge);
+const byName = await fetch(`${BASE}/bounce-videos/${id}.gif`);
+const sent = JSON.stringify([started.data, [...viaChallenge.headers]]);
+results.push({
+  check: "video served by challenge only",
+  viaChallenge: [viaChallenge.status, viaChallenge.headers.get("content-type"), (await viaChallenge.arrayBuffer()).byteLength],
+  byFileName: byName.status,
+  idLeaked: ids.some((v) => sent.includes(v)),
+});
+
 for (const r of results) {
   if (r.token) r.token = `${r.token.slice(0, 12)}…`;
   console.log(JSON.stringify(r));

@@ -29,7 +29,7 @@ for (const name of VARIANT_NAMES) {
       const id = randomBytes(8).toString("hex");
       const gif = render();
       writeFileSync(new URL(`${id}.gif`, VIDEO_DIR), gif);
-      console.log(`${name}  ${id}.gif  ${Math.round(gif.length / 1024)} KB  ${answer.bounces} bounces, ${answer.feints} feints`);
+      console.log(`${name}  ${Math.round(gif.length / 1024)} KB  ${answer.bounces} bounces, ${answer.feints} feints`);
       return { id, ...answer };
     }
     throw new Error(`no ${name} video with ${count} bounces after ${MAX_TRIES} tries`);
