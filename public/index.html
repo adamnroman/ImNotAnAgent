@@ -43,6 +43,7 @@
     font: inherit; padding: 8px 14px; border-radius: 6px; cursor: pointer;
     border: 1px solid var(--line); background: var(--panel); color: var(--text);
   }
+  .collect-notice { margin-top: 8px; font-size: 13px; }
   [hidden] { display: none; }
 </style>
 </head>
@@ -67,6 +68,7 @@
   </div>
 </main>
 
+<script src="/collect.js"></script>
 <script>
 // Everything lives inside this function so the page exposes no variables to other scripts.
 // The server decides the path and the score; this code only draws the ball and records the cursor.
@@ -95,8 +97,18 @@
 
   const round1 = (v) => Math.round(v * 10) / 10;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // Only active in a labelled trace-collection session (collect.js); taps are recorded in the
+  // same coordinates as the trace, and the recording goes with the final submission.
+  const recorder = TraceCollection.attach({
+    noticeIn: document.querySelector("main"),
+    position: (e) => {
+      const rect = canvas.getBoundingClientRect();
+      return [((e.clientX - rect.left) / rect.width) * SIZE, ((e.clientY - rect.top) / rect.height) * SIZE];
+    },
+  });
+  const withRecording = (path, body) => (path === "/api/verify" ? { ...body, collect: recorder.payload() } : body);
   const post = (path, body) =>
-    fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(withRecording(path, body)) });
 
   const onBall = () =>
     pointer !== null && Math.hypot(pointer.x - ball.x, pointer.y - ball.y) <= RADIUS;
@@ -161,6 +173,7 @@
       haveLastLeg = data.last;
       fetchingLeg = false;
       startedAt = performance.now();
+      recorder.begin(startedAt);
       pending = [[0, round1(pointer.x), round1(pointer.y)]];
       segments = [];
       lastSampleAt = 0;
@@ -207,6 +220,7 @@
       if (res.status === 429) return stop("Too many failed attempts. Try again in 10 minutes.");
       if (!res.ok) throw new Error();
       const data = await res.json();
+      recorder.result(data.recorded);
       showOutcome(data.passed ? "Passed: likely human" : "Failed: likely a bot", data.passed, [
         ["Human score", data.score + "%"],
         ["Bot probability", data.botProbability + "%"],

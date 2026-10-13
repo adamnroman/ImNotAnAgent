@@ -42,4 +42,5 @@ p { margin: 0; color: var(--muted); }
 .bounce-test .verdict { font-weight: 600; }
 .bounce-test .verdict.pass { color: var(--pass); }
 .bounce-test .verdict.fail { color: var(--fail); }
+.collect-notice { margin-top: 8px; font-size: 13px; }
 [hidden] { display: none !important; }

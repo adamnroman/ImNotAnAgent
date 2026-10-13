@@ -17,6 +17,7 @@ import pool from "./bounce-pool.json" with { type: "json" };
 import { json, fail, seal, encrypt, decrypt } from "./tokens.js";
 import { scoreBehaviour, validateBehaviour } from "./behaviour.js";
 import { recordFailure } from "./limits.js";
+import { collectTrace } from "./traces.js";
 
 const PROMPTS = {
   plain: "Count the times the ball touches a wall.",
@@ -111,5 +112,10 @@ export async function bounceVerify(env, body, { ip }) {
   if (env.DEBUG_FEATURES === "true") {
     Object.assign(response, { bounces: answer.bounces, feints: answer.feints, countRight, behaviour });
   }
+  // Labelled test sessions only (traces.js); undefined, and so left out, for everyone else.
+  response.recorded = await collectTrace(env, body.collect, {
+    test: "bounce", variant: challenge.variant, behaviour: body.behaviour, passed, countRight,
+    score: behaviour.score, features: behaviour.features, signals: behaviour.signals,
+  });
   return json(response);
 }

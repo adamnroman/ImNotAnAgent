@@ -44,6 +44,8 @@ window.BounceCaptcha = (() => {
     el("h2").textContent = title;
     parts.prompt.textContent = intro;
     parts.img.alt = `${title}: a ball bouncing around a square`;
+    // Only present, and only active, in a labelled trace-collection session (collect.js).
+    const recorder = window.TraceCollection?.attach({ noticeIn: section, input: parts.answer });
 
     let challenge, video, playMs, plays, unlockTimer, cycleTimer;
     let startedAt, behaviour; // behaviour times are ms since the challenge started
@@ -130,6 +132,7 @@ window.BounceCaptcha = (() => {
         }
         parts.img.hidden = false;
         plays = 0;
+        recorder?.begin(startedAt);
         play();
         startCycle(data.expiresInMs);
       } catch {
@@ -143,8 +146,10 @@ window.BounceCaptcha = (() => {
       stopCycle();
       behaviour.submitAt = now();
       try {
-        const res = await post("/api/bounce/verify", { challenge, answer: Number(parts.answer.value), behaviour });
+        const collect = recorder?.payload({ replays: plays - 1 });
+        const res = await post("/api/bounce/verify", { challenge, answer: Number(parts.answer.value), behaviour, collect });
         const data = await res.json();
+        recorder?.result(data.recorded);
         if (res.status === 429) return showBlocked(data.retryAfterSeconds);
         if (!res.ok) return showOutcome("This challenge can no longer be answered.", false);
         if (data.passed) {

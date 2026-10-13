@@ -10,6 +10,7 @@
 //   POST /api/bounce/verify  -> check the answer, receive a pass token
 // Both:
 //   POST /api/siteverify     -> for the protected site's backend: check a pass token
+//   POST /api/collect/check  -> whether a link's collection key is valid (traces.js; off by default)
 //
 // Pass tokens are bound to the site the test ran for, and siteverify only accepts a token
 // for the site it was issued to. After three failed tests an IP is blocked for ten minutes.
@@ -25,6 +26,7 @@ import { scoreTrace, validateTrace } from "./scoring.js";
 import { json, fail, hmac, seal, open, sha256Hex } from "./tokens.js";
 import { bounceStart, bounceVerify, bounceVideo } from "./bounce.js";
 import { blockedResponse, isBlocked, recordFailure } from "./limits.js";
+import { collectCheck, collectTrace, expireTraces } from "./traces.js";
 
 const LEAD_MS = 350; // how early the next leg is released
 const MAX_BEHIND_MS = 700; // a commit must cover the trace up to this close to "now"
@@ -145,6 +147,10 @@ async function verify(env, body, { ip }) {
     response.features = result.features;
     response.signals = result.signals;
   }
+  // Labelled test sessions only (traces.js); undefined, and so left out, for everyone else.
+  response.recorded = await collectTrace(env, body.collect, {
+    test: "follow", trace, legs, passed: result.passed, score: result.score, features: result.features, signals: result.signals,
+  });
   return json(response);
 }
 
@@ -177,6 +183,7 @@ const routes = {
   "POST /api/siteverify": siteVerify,
   "POST /api/bounce/start": bounceStart,
   "POST /api/bounce/verify": bounceVerify,
+  "POST /api/collect/check": collectCheck,
 };
 
 export default {
@@ -203,5 +210,10 @@ export default {
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
     if (LIMITED.has(url.pathname) && (await isBlocked(env, ip))) return json(blockedResponse, 429);
     return handler(env, body, { ip, site: siteFor(body, request, url) });
+  },
+
+  // Daily: remove collected traces that have run out.
+  async scheduled(controller, env) {
+    if (env.TRACES) await expireTraces(env);
   },
 };

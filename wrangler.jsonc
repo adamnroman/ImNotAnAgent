@@ -8,9 +8,19 @@
   // Records which challenges have been answered and how often each IP has failed.
   // `wrangler dev` uses a local copy; the id is the deployed namespace.
   "kv_namespaces": [{ "binding": "USED", "id": "58448160aae74b4aa57e86406fb227a2" }],
+  // Opt-in behavioural traces for tuning (src/traces.js); the schema is in migrations/.
+  // The database does not exist yet: create it and put its id here (README, "Trace collection").
+  "d1_databases": [
+    { "binding": "TRACES", "database_name": "imnotanagent-traces", "database_id": "REPLACE_WITH_D1_DATABASE_ID", "migrations_dir": "migrations" }
+  ],
+  // Once a day, delete traces older than 30 days, also while collection is switched off.
+  "triggers": { "crons": ["17 3 * * *"] },
   "vars": {
     // "true" returns answers and raw measurements with each result, for tuning. It hands a bot
     // the answer key, so keep it "false" here; to tune locally, add DEBUG_FEATURES=true to .dev.vars.
-    "DEBUG_FEATURES": "false"
+    "DEBUG_FEATURES": "false",
+    // "true" lets links carrying the COLLECT_KEY secret record labelled test sessions
+    // (/bounce?collect=KEY&label=human-phone). Public traffic is never recorded either way.
+    "COLLECT_TRACES": "false"
   }
 }
