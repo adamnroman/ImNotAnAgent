@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import pool from "../src/bounce-pool.json" with { type: "json" };
 import { bounceStart, bounceVideo, bounceVerify } from "../src/bounce.js";
 import { decrypt, encrypt } from "../src/tokens.js";
+import { scoreBehaviour, validateBehaviour } from "../src/behaviour.js";
 
 const ids = Object.values(pool.videos).flat().map((v) => v.id);
 const site = "https://shop.example";
@@ -160,6 +161,65 @@ test("a right, human-looking answer still passes, once", async () => {
     assert.equal(result.passed, true);
     assert.ok(result.token);
     assert.equal((await bounceVerify(env, body, { ip: "10.0.0.1" })).status, 409);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+// On a phone there are no pointer moves between taps and the keyboard reports no usable keys.
+const touchBehaviour = (answer, extra = {}) => ({
+  pointerType: "touch",
+  pointer: [],
+  keys: [...String(answer)].map((_, i) => [7600 + i * 180, 0]), // "Unidentified" key presses
+  inputs: [...String(answer)].map((_, i) => [7600 + i * 180, 1]),
+  videoEndAt: 6800,
+  submitAt: 8200,
+  ...extra,
+});
+
+test("touch: scored without the pointer checks, counting digits from input events", () => {
+  for (const answer of [7, 12]) {
+    const touch = scoreBehaviour(touchBehaviour(answer), answer);
+    assert.equal(touch.humanEnough, true);
+    assert.equal(touch.features.pointerType, "touch");
+    assert.deepEqual(Object.keys(touch.signals), ["notTyped", "tooQuick"]);
+
+    // The same input from a mouse is still judged on its pointer path and key presses.
+    for (const pointerType of ["mouse", undefined]) {
+      const mouse = scoreBehaviour(touchBehaviour(answer, { pointerType }), answer);
+      assert.equal(mouse.humanEnough, false);
+      assert.equal(mouse.signals.fewPointerMoves, 1);
+      assert.equal(mouse.signals.notTyped, 1);
+    }
+  }
+});
+
+test("touch: a filled-in or instant answer still fails", () => {
+  assert.equal(scoreBehaviour(touchBehaviour(12, { inputs: [] }), 12).humanEnough, false);
+  assert.equal(scoreBehaviour(touchBehaviour(12, { inputs: undefined }), 12).humanEnough, false);
+  assert.equal(scoreBehaviour(touchBehaviour(12, { inputs: [[7600, 1]] }), 12).humanEnough, false); // one digit for a two-digit answer
+  assert.equal(scoreBehaviour(touchBehaviour(7, { submitAt: 6900 }), 7).humanEnough, false);
+});
+
+test("touch: malformed pointer type or input samples are rejected", () => {
+  assert.equal(validateBehaviour(touchBehaviour(7)), null);
+  assert.equal(validateBehaviour(touchBehaviour(7, { inputs: undefined, pointerType: undefined })), null);
+  assert.ok(validateBehaviour(touchBehaviour(7, { pointerType: 1 })));
+  assert.ok(validateBehaviour(touchBehaviour(7, { inputs: [[1]] })));
+  assert.ok(validateBehaviour(touchBehaviour(7, { inputs: "11" })));
+});
+
+test("touch: a right answer given on a phone passes the whole check", async () => {
+  const env = fakeEnv();
+  const realNow = Date.now;
+  try {
+    const data = await (await bounceStart(env, { variant: "plain" }, { site })).json();
+    const { video: id } = await decrypt(env, "bounce", data.challenge);
+    const answer = pool.videos.plain.find((v) => v.id === id).bounces;
+    Date.now = () => realNow() + 8200;
+    const result = await (await bounceVerify(env, { challenge: data.challenge, answer, behaviour: touchBehaviour(answer) }, { ip: "10.0.0.3" })).json();
+    assert.equal(result.passed, true);
+    assert.ok(result.token);
   } finally {
     Date.now = realNow;
   }

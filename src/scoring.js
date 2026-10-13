@@ -8,6 +8,8 @@ export const TUNING = {
   passScore: 75, // human score (0-100) needed to pass
   lagMinMs: 50, // humans are assumed to trail the ball by 50-70 ms
   lagMaxMs: 70,
+  touchLagMinMs: 0, // a finger hides the ball, so it sits anywhere from on it to well behind
+  touchLagMaxMs: 200,
   lagMarginMs: 30, // suspicion ramps from 0 to 1 across this margin outside the band
   lagSpreadGoodMs: 4, // leg-to-leg variation in lag; a fixed delay has none
   lagSpreadBadMs: 1,
@@ -47,9 +49,10 @@ export function validateTrace(trace) {
   return null;
 }
 
-// 0 when value is at `good` or better, 1 at `bad` or worse, linear in between.
+// 0 when value is at `good` or better, 1 at `bad` or worse, linear in between. A measurement
+// that could not be taken (null) is no evidence either way, so it raises no suspicion.
 const ramp = (value, good, bad) =>
-  value === null ? 1 : Math.max(0, Math.min(1, (value - good) / (bad - good)));
+  value === null ? 0 : Math.max(0, Math.min(1, (value - good) / (bad - good)));
 
 function median(values) {
   if (!values.length) return null;
@@ -197,16 +200,20 @@ function measure(legs, trace) {
   };
 }
 
-export function scoreTrace(legs, trace) {
+// pointerType is what the page reported ("mouse", "touch" or "pen"); only touch is scored differently.
+export function scoreTrace(legs, trace, pointerType = "mouse") {
   const f = measure(legs, trace);
   const T = TUNING;
+  const touch = pointerType === "touch";
+  const lagMinMs = touch ? T.touchLagMinMs : T.lagMinMs;
+  const lagMaxMs = touch ? T.touchLagMaxMs : T.lagMaxMs;
 
   const lagSuspicion =
     f.lagMs === null
-      ? 1
-      : f.lagMs < T.lagMinMs
-        ? ramp(f.lagMs, T.lagMinMs, T.lagMinMs - T.lagMarginMs)
-        : ramp(f.lagMs, T.lagMaxMs, T.lagMaxMs + T.lagMarginMs);
+      ? 0
+      : f.lagMs < lagMinMs
+        ? ramp(f.lagMs, lagMinMs, lagMinMs - T.lagMarginMs)
+        : ramp(f.lagMs, lagMaxMs, lagMaxMs + T.lagMarginMs);
 
   // Each signal is a suspicion from 0 (looks human) to 1 (looks scripted).
   const signals = {

@@ -2,6 +2,10 @@
 // The page records trusted pointer moves and key presses during the challenge; a browser
 // agent that clicks by coordinates and fills the field programmatically leaves almost none.
 // Like scoring.js, the bands are assumptions until tuned on real people.
+//
+// A finger leaves no pointer moves between taps, and a phone keyboard reports no usable key
+// presses, so on touch the pointer checks are dropped and digits are counted from the field's
+// input events instead.
 
 export const BEHAVIOUR = {
   passScore: 75, // human score (0-100) needed, on top of the right count
@@ -24,11 +28,17 @@ const isSamples = (list, max, width) =>
   list.length <= max &&
   list.every((s) => Array.isArray(s) && s.length === width && s.every(Number.isFinite));
 
-// Returns an error string, or null. behaviour: { pointer: [[t, x, y]], keys: [[t, isDigit]], videoEndAt, submitAt }
+export const isTouch = (pointerType) => pointerType === "touch";
+
+// Returns an error string, or null.
+// behaviour: { pointerType, pointer: [[t, x, y]], keys: [[t, isDigit]], inputs: [[t, isDigit]], videoEndAt, submitAt }
+// pointerType and inputs are optional; without them the answer is scored as mouse and keyboard.
 export function validateBehaviour(b) {
   if (!b || typeof b !== "object") return "missing behaviour";
+  if (b.pointerType !== undefined && typeof b.pointerType !== "string") return "bad pointer type";
   if (!isSamples(b.pointer, MAX_POINTER_SAMPLES, 3)) return "bad pointer samples";
   if (!isSamples(b.keys, MAX_KEYS, 2)) return "bad key samples";
+  if (b.inputs !== undefined && !isSamples(b.inputs, MAX_KEYS, 2)) return "bad input samples";
   if (!Number.isFinite(b.videoEndAt) || !Number.isFinite(b.submitAt)) return "bad timings";
   return null;
 }
@@ -51,8 +61,10 @@ function curviness(pointer) {
 
 export function scoreBehaviour(b, answer) {
   const T = BEHAVIOUR;
-  const digitsTyped = b.keys.filter(([, isDigit]) => isDigit).length;
+  const touch = isTouch(b.pointerType);
+  const digitsTyped = (touch ? (b.inputs ?? []) : b.keys).filter(([, isDigit]) => isDigit).length;
   const features = {
+    pointerType: touch ? "touch" : "mouse",
     pointerMoves: b.pointer.length,
     curviness: curviness(b.pointer),
     digitsTyped,
@@ -60,8 +72,12 @@ export function scoreBehaviour(b, answer) {
   };
   // Each signal is a suspicion from 0 (looks human) to 1 (looks scripted).
   const signals = {
-    fewPointerMoves: ramp(features.pointerMoves, T.movesGood, T.movesBad),
-    straightPointer: ramp(features.curviness, T.curveGood, T.curveBad),
+    ...(touch
+      ? {}
+      : {
+          fewPointerMoves: ramp(features.pointerMoves, T.movesGood, T.movesBad),
+          straightPointer: ramp(features.curviness, T.curveGood, T.curveBad),
+        }),
     notTyped: digitsTyped >= String(answer).length ? 0 : 1,
     tooQuick: ramp(features.reactionMs, T.reactionGoodMs, T.reactionBadMs),
   };
