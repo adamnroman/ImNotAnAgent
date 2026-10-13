@@ -1,6 +1,6 @@
 // Trace collection (src/traces.js) must store nothing unless it is switched on and the request
 // carries the collection key, must store only the listed fields, and must keep to its limits.
-// Runs the real statements on an in-memory SQLite database (test/d1.js) with the repository's
+// Runs the real statements on an in-memory SQLite database (tools/local-d1.mjs) with the repository's
 // migration applied. Needs the rendered pool, like bounce.test.js.
 
 import test from "node:test";
@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import pool from "../src/bounce-pool.json" with { type: "json" };
 import worker from "../src/index.js";
-import { localD1 } from "./d1.js";
+import { localD1 } from "../tools/local-d1.mjs";
 import { decrypt } from "../src/tokens.js";
 import { DURATION_MS } from "../src/path.js";
 import { KEEP_DAYS, LABELS, MAX_RECORD_BYTES, MAX_RECORDS_PER_DAY, buildRecord, collectTrace, storeTrace } from "../src/traces.js";
