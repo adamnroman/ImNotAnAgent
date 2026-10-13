@@ -10,7 +10,9 @@
     "pretest": "node tools/setup.mjs",
     "test": "node --test",
     "build:pool": "node tools/build-bounce-pool.mjs",
-    "smoke": "node tools/smoke.mjs"
+    "smoke": "node tools/smoke.mjs",
+    "traces:export": "node tools/export-traces.mjs",
+    "traces:analyse": "node tools/analyse-traces.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.149.0"
