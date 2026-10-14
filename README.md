@@ -4,13 +4,17 @@ Hackathon prototypes of human checks, built as a Cloudflare Worker. It runs loca
 `wrangler dev` and is deployed at https://imnotanagent.adamnroman.workers.dev. No API keys or
 paid services are involved; it fits Cloudflare's free plan.
 
-- **Follow the ball** (`/`): keep the cursor on a moving ball. The server releases the path a
-  leg at a time and scores the cursor trace for human-like lag, overshoot and jitter.
+- **Follow the ball** (`/`): keep the cursor, or a finger, on a moving ball. The server releases
+  the path a leg at a time and scores the trace for human-like lag, overshoot and jitter.
 - **Count the bounces** (`/bounce`): count how often a ball touches a wall; some turns are
   feints that stop short of the wall. Three versions: a plain ball, a ball made of moving dots,
   and colour-flicker balls. Passing needs the right count and human-looking pointer and key input.
 - **Embed script** (`/embed-demo`): one `<script>` tag that covers any page until the visitor
   passes the bounce test.
+
+Both tests report whether a mouse or a finger was used, and touch is scored on its own terms:
+a wider lag band for follow the ball, and for the bounces no pointer-path checks, with the
+digits counted as they arrive in the field rather than from key presses.
 
 These are experiments, not production bot protection: a script that decodes the video frames
 can still pass the bounce test.

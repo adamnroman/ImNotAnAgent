@@ -57,42 +57,47 @@ const cursors = {
 
   // A hand: trails the ball, is slow to notice a turn (so it carries on past the corner),
   // has momentum, and drifts smoothly.
-  humanLike: (legs, rand) => {
-    const stiffness = 40; // rad/s
-    const damping = 0.5;
-    const drift = { x: 0, y: 0 };
-    const pos = { x: SIZE / 2, y: SIZE / 2 };
-    const vel = { x: 0, y: 0 };
-    const trailMs = legs.map(() => 25 + rand() * 20);
-    const noticeTurnMs = legs.map(() => 110 + rand() * 80);
-    // Where the hand believes the ball is: the previous leg, extended, until the turn registers.
-    const believed = (t) => {
-      const k = Math.max(0, legs.findIndex((l) => t <= l.t1));
-      if (k === 0 || t - legs[k].t0 >= noticeTurnMs[k]) return ballAt(legs, Math.max(0, t - trailMs[k]));
-      const prev = legs[k - 1];
-      const f = (t - trailMs[k] - prev.t0) / (prev.t1 - prev.t0);
-      return { x: prev.x0 + (prev.x1 - prev.x0) * f, y: prev.y0 + (prev.y1 - prev.y0) * f };
-    };
-    const trace = [];
-    for (let t = 0; t <= DURATION_MS; t++) {
-      const target = believed(t);
-      for (const axis of ["x", "y"]) {
-        const accel = stiffness ** 2 * (target[axis] - pos[axis]) - 2 * damping * stiffness * vel[axis];
-        vel[axis] += accel * 0.001;
-        pos[axis] += vel[axis] * 0.001;
-        drift[axis] += -drift[axis] / 200 + gauss(rand) * 2.5 * Math.sqrt(2 / 200);
-      }
-      if (t % EVENT_MS === 0) trace.push([t, Math.round(pos.x + drift.x), Math.round(pos.y + drift.y)]);
-    }
-    return trace;
-  },
+  humanLike: (legs, rand) => hand(legs, rand, 25),
+
+  // A finger on a phone: the same hand, but further behind the ball it is covering.
+  fingerLike: (legs, rand) => hand(legs, rand, 70),
 };
 
-function passRate(name) {
+function hand(legs, rand, minTrailMs) {
+  const stiffness = 40; // rad/s
+  const damping = 0.5;
+  const drift = { x: 0, y: 0 };
+  const pos = { x: SIZE / 2, y: SIZE / 2 };
+  const vel = { x: 0, y: 0 };
+  const trailMs = legs.map(() => minTrailMs + rand() * 20);
+  const noticeTurnMs = legs.map(() => 110 + rand() * 80);
+  // Where the hand believes the ball is: the previous leg, extended, until the turn registers.
+  const believed = (t) => {
+    const k = Math.max(0, legs.findIndex((l) => t <= l.t1));
+    if (k === 0 || t - legs[k].t0 >= noticeTurnMs[k]) return ballAt(legs, Math.max(0, t - trailMs[k]));
+    const prev = legs[k - 1];
+    const f = (t - trailMs[k] - prev.t0) / (prev.t1 - prev.t0);
+    return { x: prev.x0 + (prev.x1 - prev.x0) * f, y: prev.y0 + (prev.y1 - prev.y0) * f };
+  };
+  const trace = [];
+  for (let t = 0; t <= DURATION_MS; t++) {
+    const target = believed(t);
+    for (const axis of ["x", "y"]) {
+      const accel = stiffness ** 2 * (target[axis] - pos[axis]) - 2 * damping * stiffness * vel[axis];
+      vel[axis] += accel * 0.001;
+      pos[axis] += vel[axis] * 0.001;
+      drift[axis] += -drift[axis] / 200 + gauss(rand) * 2.5 * Math.sqrt(2 / 200);
+    }
+    if (t % EVENT_MS === 0) trace.push([t, Math.round(pos.x + drift.x), Math.round(pos.y + drift.y)]);
+  }
+  return trace;
+}
+
+function passRate(name, pointerType) {
   let passed = 0;
   for (let run = 0; run < RUNS; run++) {
     const legs = legsFor(run);
-    if (scoreTrace(legs, cursors[name](legs, rng(run + 1))).passed) passed++;
+    if (scoreTrace(legs, cursors[name](legs, rng(run + 1)), pointerType).passed) passed++;
   }
   return passed / RUNS;
 }
@@ -114,6 +119,27 @@ for (const bot of ["perfect", "parked", "delayed", "delayedWithNoise"]) {
 }
 
 test("human-like cursor usually passes", () => assert.ok(passRate("humanLike") >= 0.8));
+
+for (const bot of ["perfect", "parked", "delayed", "delayedWithNoise"]) {
+  test(`${bot} cursor never passes as touch either`, () => assert.equal(passRate(bot, "touch"), 0));
+}
+
+test("a finger trailing further behind usually passes as touch, and not as a mouse", () => {
+  assert.ok(passRate("fingerLike", "touch") >= 0.8);
+  assert.ok(passRate("fingerLike", "mouse") <= 0.2);
+  assert.ok(passRate("fingerLike") <= 0.2); // no pointer type reported: scored as a mouse
+});
+
+test("a human-like trace usually passes as touch too", () => assert.ok(passRate("humanLike", "touch") >= 0.8));
+
+test("a measurement that could not be taken raises no suspicion", () => {
+  // Two samples far from the ball: nothing to measure lag, jitter or overshoot from.
+  const legs = legsFor(0);
+  const { features, signals, passed } = scoreTrace(legs, [[0, 0, 0], [DURATION_MS, 0, 0]]);
+  for (const name of ["lagMs", "lagSpreadMs", "overshootRate", "jitterPx", "jitterSmoothness"]) assert.equal(features[name], null);
+  for (const name of ["lag", "constantLag", "noOvershoot", "noJitter", "noisyJitter"]) assert.equal(signals[name], 0);
+  assert.equal(passed, false); // still fails: it was never on the ball
+});
 
 // `node test/scoring.test.js --report` prints the measurements behind each verdict.
 if (process.argv.includes("--report")) {

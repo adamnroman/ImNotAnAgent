@@ -31,7 +31,8 @@ p { margin: 0; color: var(--muted); }
   font: inherit; padding: 8px 12px; border-radius: 6px;
   border: 1px solid var(--line); background: var(--panel); color: var(--text);
 }
-.bounce-test input { flex: 1; min-width: 0; }
+/* 16px: iOS zooms the page when a smaller field is focused. */
+.bounce-test input { flex: 1; min-width: 0; font-size: 16px; }
 .bounce-test button { cursor: pointer; }
 .bounce-test button:disabled, .bounce-test input:disabled { opacity: 0.5; cursor: default; }
 .bounce-test button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }

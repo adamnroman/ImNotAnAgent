@@ -3,7 +3,7 @@
 // Follow-the-ball test (public/index.html):
 //   POST /api/start          -> a signed session, the first leg of the ball's path
 //   POST /api/leg            -> commit the cursor trace so far, receive the next leg
-//   POST /api/verify         -> submit the rest of the trace, receive the score and a pass token
+//   POST /api/verify         -> submit the rest of the trace and the pointer type, receive the score and a pass token
 // Count-the-bounces test (public/bounce.html, and public/embed.js for other sites): see bounce.js
 //   POST /api/bounce/start   -> an encrypted challenge and the URL of its pre-rendered video
 //   GET  /api/bounce/video/* -> that video
@@ -123,7 +123,7 @@ async function verify(env, body, { ip }) {
   if (await env.USED.get(usedKey)) return fail(409, "session already scored");
   await env.USED.put(usedKey, "1", { expirationTtl: 600 });
 
-  const result = scoreTrace(legs, trace);
+  const result = scoreTrace(legs, trace, body.pointerType);
   const response = {
     passed: result.passed,
     score: result.score,

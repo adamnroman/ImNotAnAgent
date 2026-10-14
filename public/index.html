@@ -73,7 +73,6 @@
 (() => {
   const SIZE = 360;
   const RADIUS = 24;
-  const IDLE_HINT = "Put your cursor on the ball to start, then keep it there.";
 
   const canvas = document.getElementById("stage");
   const ctx = canvas.getContext("2d");
@@ -88,11 +87,15 @@
 
   let state = "idle";       // idle -> starting -> running -> scoring -> done
   let pointer = null;       // last known cursor position in logical coords
+  // "mouse", "touch" or "pen": a guess from the device until the visitor's first pointer event.
+  let pointerType = matchMedia("(pointer: coarse)").matches ? "touch" : "mouse";
   let ball, session, chain, legs, haveLastLeg, fetchingLeg, durationMs, leadMs;
   let startedAt;            // performance.now() when the ball started moving
   let pending, segments;    // samples not yet committed; samples committed with each leg
   let lastSampleAt;
 
+  const pointerName = () => (pointerType === "touch" ? "finger" : "cursor");
+  const idleHint = () => `Put your ${pointerName()} on the ball to start, then keep it there.`;
   const round1 = (v) => Math.round(v * 10) / 10;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const post = (path, body) =>
@@ -121,7 +124,7 @@
     ball = { x: SIZE / 2, y: SIZE / 2 };
     els.summary.hidden = true;
     els.progress.style.width = "0";
-    els.hint.textContent = IDLE_HINT;
+    els.hint.textContent = idleHint();
   }
 
   function showRows(list, rows) {
@@ -165,7 +168,7 @@
       segments = [];
       lastSampleAt = 0;
       state = "running";
-      els.hint.textContent = "Keep your cursor on the ball.";
+      els.hint.textContent = `Keep your ${pointerName()} on the ball.`;
     } catch {
       stop("Could not reach the server.");
     }
@@ -203,7 +206,7 @@
     state = "scoring";
     els.hint.textContent = "Scoring…";
     try {
-      const res = await post("/api/verify", { session, chain, segments: [...segments, pending] });
+      const res = await post("/api/verify", { session, chain, pointerType, segments: [...segments, pending] });
       if (res.status === 429) return stop("Too many failed attempts. Try again in 10 minutes.");
       if (!res.ok) throw new Error();
       const data = await res.json();
@@ -255,6 +258,10 @@
 
   function track(e) {
     if (!e.isTrusted) return; // ignore events made by scripts
+    if (e.pointerType && e.pointerType !== pointerType) {
+      pointerType = e.pointerType;
+      if (state === "idle") els.hint.textContent = idleHint();
+    }
     const rect = canvas.getBoundingClientRect();
     pointer = {
       x: ((e.clientX - rect.left) / rect.width) * SIZE,

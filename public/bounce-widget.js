@@ -1,6 +1,7 @@
 // One count-the-bounces test. The server picks the video and knows the answer; this code
-// shows it, records how the visitor interacts (trusted pointer moves and key presses), and
-// sends both with the count.
+// shows it, records how the visitor interacts (trusted pointer moves, key presses and, for
+// phone keyboards, the digits arriving in the field), and sends that with the count along
+// with the kind of pointer used, so a finger is not scored like a mouse.
 //
 //   BounceCaptcha.mount(container, { variant, title, intro, site, onPass })
 //
@@ -47,17 +48,29 @@ window.BounceCaptcha = (() => {
 
     let challenge, video, playMs, plays, unlockTimer, cycleTimer;
     let startedAt, behaviour; // behaviour times are ms since the challenge started
+    // "mouse", "touch" or "pen": a guess from the device until the visitor's first pointer event.
+    let pointerType = matchMedia("(pointer: coarse)").matches ? "touch" : "mouse";
 
     const now = () => round1(performance.now() - startedAt);
 
     // Only events from a real input device are recorded; script-made events are not trusted.
+    document.addEventListener("pointerdown", (e) => {
+      if (e.isTrusted && e.pointerType) pointerType = e.pointerType;
+    });
     document.addEventListener("pointermove", (e) => {
-      if (!e.isTrusted || !behaviour || behaviour.pointer.length >= MAX_POINTER_SAMPLES) return;
+      if (!e.isTrusted) return;
+      if (e.pointerType) pointerType = e.pointerType;
+      if (!behaviour || behaviour.pointer.length >= MAX_POINTER_SAMPLES) return;
       behaviour.pointer.push([now(), round1(e.clientX), round1(e.clientY)]);
     });
     parts.answer.addEventListener("keydown", (e) => {
       if (!e.isTrusted || !behaviour || behaviour.keys.length >= 50) return;
       behaviour.keys.push([now(), /^[0-9]$/.test(e.key) ? 1 : 0]);
+    });
+    // Phone keyboards often report no usable key, so the digits are also read as they arrive.
+    parts.answer.addEventListener("input", (e) => {
+      if (!e.isTrusted || !behaviour || behaviour.inputs.length >= 50) return;
+      behaviour.inputs.push([now(), /^[0-9]$/.test(e.data ?? "") ? 1 : 0]);
     });
 
     // Each challenge lasts a fixed time; when it runs out a new video replaces it.
@@ -120,7 +133,7 @@ window.BounceCaptcha = (() => {
         const data = await res.json();
         ({ challenge, video, playMs } = data);
         startedAt = performance.now();
-        behaviour = { pointer: [], keys: [], videoEndAt: 0, submitAt: 0 };
+        behaviour = { pointer: [], keys: [], inputs: [], videoEndAt: 0, submitAt: 0 };
         parts.prompt.textContent = data.prompt;
         if (data.swatch) {
           const swatch = document.createElement("span");
@@ -142,6 +155,7 @@ window.BounceCaptcha = (() => {
       setAnswering(false);
       stopCycle();
       behaviour.submitAt = now();
+      behaviour.pointerType = pointerType;
       try {
         const res = await post("/api/bounce/verify", { challenge, answer: Number(parts.answer.value), behaviour });
         const data = await res.json();
